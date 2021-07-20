@@ -7,6 +7,11 @@ KOKKOSKERNELS_ADD_EXECUTABLE(
   )
 
 KOKKOSKERNELS_ADD_EXECUTABLE(
+  gmres_ex_ir_A
+  SOURCES ex_ir_A.cpp
+  )
+
+KOKKOSKERNELS_ADD_EXECUTABLE_AND_TEST(
   gmres_test_real_A
   SOURCES test_real_A.cpp
   )
