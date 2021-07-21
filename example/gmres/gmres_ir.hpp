@@ -137,6 +137,7 @@ template< class ScalarType, class InnerST, class Layout, class EXSP, class Ordin
   InViewMatrixType H("H",m+1,m); //H matrix on device. Also used in Arn Rec debug. 
   typename InViewMatrixType::HostMirror H_h = Kokkos::create_mirror_view(H); //Make H into a host view of H. 
   InViewVectorType Xupdate("Xupdate",n); //Intermediate update of X. 
+  InViewVectorType orthoTmp(Kokkos::view_alloc(Kokkos::WithoutInitializing, "orthoTmp"),m); 
 
   //Compute initial residuals in double:
   nrmB = KokkosBlas::nrm2(B);
@@ -175,11 +176,10 @@ template< class ScalarType, class InnerST, class Layout, class EXSP, class Ordin
         KokkosBlas::gemv("N", -one_in, V0j, Hj, one_in, Wjin); // wj = wj - Vj * Hj
 
         //Re-orthog CGS:
-        //TODO: should we be allocating this tmp vec ahead of time and taking subviews?
-        InViewVectorType tmp(Kokkos::view_alloc(Kokkos::WithoutInitializing, "tmp"),j+1); //Tmp vector for CGS2
-        KokkosBlas::gemv("C", one_in, V0j, Wjin, zero_in, tmp); // tmp (Hj) = Vj^T * wj
-        KokkosBlas::gemv("N", -one_in, V0j, tmp, one_in, Wjin); // wj = wj - Vj * tmp 
-        KokkosBlas::axpy(one_in, tmp, Hj); // Hj = Hj + tmp
+        auto orthoTmpSub = Kokkos::subview(orthoTmp,Kokkos::make_pair(0,j+1)); 
+        KokkosBlas::gemv("C", one_in, V0j, Wjin, zero_in, orthoTmpSub); // tmp (Hj) = Vj^T * wj
+        KokkosBlas::gemv("N", -one_in, V0j, orthoTmpSub, one_in, Wjin); // wj = wj - Vj * tmp 
+        KokkosBlas::axpy(one_in, orthoTmpSub, Hj); // Hj = Hj + tmp
         Kokkos::deep_copy(Hj_h,Hj);
       }
       else {
