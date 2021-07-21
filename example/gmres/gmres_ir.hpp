@@ -126,7 +126,7 @@ template< class ScalarType, class InnerST, class Layout, class EXSP, class Ordin
   MT nrmB, trueRes, relRes, shortRelRes; // Need to track these in higher precision. 
 
   // Single precision vecs:
-  InViewVectorType Wjin(Kokkos::view_alloc(Kokkos::WithoutInitializing, "W_j_in"),n); //Tmp work vector 1
+  InViewVectorType Wjin(Kokkos::view_alloc(Kokkos::WithoutInitializing, "W_j_in"),n); //Tmp work vector inner 
   InViewMatrixType V(Kokkos::view_alloc(Kokkos::WithoutInitializing, "V"),n,m+1);
   InViewMatrixType VSub; //Subview of 1st m cols for updating soln. 
   InViewHostVectorType GVec_h(Kokkos::view_alloc(Kokkos::WithoutInitializing, "GVec"),m+1);
@@ -158,6 +158,7 @@ template< class ScalarType, class InnerST, class Layout, class EXSP, class Ordin
 
     for (int j = 0; j < m; j++){
       KokkosSparse::spmv("N", one_in, Ain, Vj, zero_in, Wjin); //wj = A*Vj
+      Kokkos::Profiling::pushRegion("GMRES::Orthog:");
       if( ortho == "MGS"){
         for (int i = 0; i <= j; i++){
           auto Vi = Kokkos::subview(V,Kokkos::ALL,i); 
@@ -187,12 +188,13 @@ template< class ScalarType, class InnerST, class Layout, class EXSP, class Ordin
 
       MTin tmpNrm = KokkosBlas::nrm2(Wjin);
       H_h(j+1,j) = tmpNrm; 
-      if(tmpNrm < 1e-14){ //TODO: Should this tol change for lower precision??
-        throw std::runtime_error("GMRES lucky breakdown. Solver terminated without convergence."); 
+      if(tmpNrm < 1e-8){ 
+        throw std::runtime_error("GMRES-IR lucky breakdown. Solver terminated without convergence."); 
       }
 
       Vj = Kokkos::subview(V,Kokkos::ALL,j+1); 
       KokkosBlas::scal(Vj,one_in/H_h(j+1,j),Wjin); // Wj = Vj/H(j+1,j)
+      Kokkos::Profiling::popRegion();
 
       // Givens for real and complex (See Alg 3 in "On computing Givens rotations reliably and efficiently"
       // by Demmel, et. al. 2001)
@@ -239,7 +241,7 @@ template< class ScalarType, class InnerST, class Layout, class EXSP, class Ordin
 
         // Update solution and compute new residuals in double:
         Kokkos::deep_copy(Xiter,X); //Can't overwrite X with intermediate solution.
-        KokkosBlas::axpy(one, Xupdate, Xiter); // x_iter = x + update //TODO: This casts Xupdate to double, right??
+        KokkosBlas::axpy(one, Xupdate, Xiter); // x_iter = x + update 
         KokkosSparse::spmv("N", one, A, Xiter, zero, Wj); // wj = Ax
         Kokkos::deep_copy(Res,B); // Reset r=b.
         KokkosBlas::axpy(-one, Wj, Res); // r = b-Ax. 
@@ -255,32 +257,12 @@ template< class ScalarType, class InnerST, class Layout, class EXSP, class Ordin
         }
       }
 
-      // DEBUG: Print elts of H:
-      /*std::cout << "Elements of H " <<std::endl;
-        for (int i1 = 0; i1 < m+1; i1++){
-        for (int j1 = 0; j1 < m; j1++){
-        std::cout << H_h(i1,j1);
-        }
-        std::cout << std::endl;
-        }*/
-
     }//end Arnoldi iter.
-
-    /*//DEBUG: Check orthogonality of V:
-    ViewMatrixType Vsm("Vsm", m+1, m+1);
-    KokkosBlas::gemm("C","N", one, V, V, zero, Vsm); // Vsm = V^T * V
-    Kokkos::View<MT*, Layout, EXSP> nrmV("nrmV",m+1);
-    KokkosBlas::nrm2(nrmV, Vsm); //nrmV = norm(Vsm)
-    std::cout << "Norm of V^T V (Should be all ones, except ending iteration.): " << std::endl;
-    typename Kokkos::View<MT*, Layout, EXSP>::HostMirror nrmV_h = Kokkos::create_mirror_view(nrmV); 
-    Kokkos::deep_copy(nrmV_h, nrmV);
-    for (int i1 = 0; i1 < m+1; i1++){ std::cout << nrmV_h(i1) << " " ; } 
-    std::cout << std::endl;*/
 
     cycle++;
 
     //This is the end, or it's time to restart. Update solution to most recent vector.
-    Kokkos::deep_copy(X, Xiter); //This is in double.  :)
+    Kokkos::deep_copy(X, Xiter); //This is in double.  
   }
 
   std::cout << "Ending relative residual is: " << relRes << std::endl;

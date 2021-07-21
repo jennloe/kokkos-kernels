@@ -103,7 +103,7 @@ int main(int argc, char *argv[]) {
 
   int n = A.numRows();
   ViewVectorType X("X",n); //Solution and initial guess
-  ViewVectorType Wj("Wj",n); //For checking residuals at end.
+  ViewVectorType Wj(Kokkos::view_alloc(Kokkos::WithoutInitializing, "Wj"),n); //For checking residuals at end.
   ViewVectorType B(Kokkos::view_alloc(Kokkos::WithoutInitializing, "B"),n);//right-hand side vec
 
   if(rand_rhs){
@@ -118,7 +118,9 @@ int main(int argc, char *argv[]) {
   }
 
   // Run GMRS solve:
+  Kokkos::Profiling::pushRegion("GMRES_IR::TotalTime");
   GmresStats solveStats = gmres_ir<ST,STin, Kokkos::LayoutLeft, EXSP>(A, Ain, B, X, convTol, m, cycLim, ortho);
+  Kokkos::Profiling::popRegion();
 
   // Double check residuals at end of solve:
   double nrmB = KokkosBlas::nrm2(B);
